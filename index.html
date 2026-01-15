@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paradigm.0g iNFT Hub - DARA Research Passports</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #000; color: #0f0; padding: 20px; max-width: 800px; margin: auto; }
+        h1 { color: #0ff; text-align: center; }
+        button { background: #0f0; color: #000; padding: 12px 20px; margin: 10px; cursor: pointer; border: none; border-radius: 5px; font-weight: bold; }
+        #status { margin: 15px 0; padding: 10px; background: #111; border-radius: 5px; }
+        .inft-card { background: #222; padding: 15px; margin: 15px 0; border: 1px solid #0f0; border-radius: 8px; }
+        .live { color: #0f0; font-weight: bold; }
+        .warning { color: #ff0; }
+        #network { margin-bottom: 20px; }
+    </style>
+    <!-- ethers.js CDN -->
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.umd.min.js"></script>
+    <!-- WalletConnect v1 (simple for Trust) -->
+    <script src="https://unpkg.com/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
+</head>
+<body>
+    <h1>Paradigm.0g iNFT Hub</h1>
+    <p>Showcasing live DARA Research Passport iNFTs on 0G Chain (Quantum/ZK/Bio/Storage anchored research data).</p>
+
+    <div id="network">
+        <label>Network: </label>
+        <select id="chainSelect">
+            <option value="mainnet">Aristotle Mainnet (16661)</option>
+            <option value="testnet">Galileo Testnet (16602)</option>
+        </select>
+    </div>
+
+    <button id="connectBtn">Connect with Trust Wallet (WalletConnect)</button>
+    <div id="status">Status: Not connected</div>
+
+    <div id="inftsContainer"></div>
+
+    <script>
+        const YOUR_WALLET = "0x6F4D829488686afd8D9B68AE56986C312784C0e6".toLowerCase();
+        const CONTRACT_ADDRESS = "0x57e463BF845cf328715446b9246fFa536B671A10";
+        const TOKEN_IDS = [1, 2, 3, 4]; // Your token IDs
+
+        const ABI = [
+            "function ownerOf(uint256 tokenId) view returns (address)",
+            "function balanceOf(address owner) view returns (uint256)",
+            "function tokenURI(uint256 tokenId) view returns (string)"
+        ];
+
+        let provider, signer, contract;
+        let connectedAddress = null;
+
+        const mainnetRpc = "https://evmrpc.0g.ai";
+        const testnetRpc = "https://evmrpc-testnet.0g.ai";
+
+        function getRpc() {
+            return document.getElementById("chainSelect").value === "mainnet" ? mainnetRpc : testnetRpc;
+        }
+
+        async function initProvider() {
+            const rpc = getRpc();
+            provider = new ethers.providers.JsonRpcProvider(rpc);
+            contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+            updateStatus("Provider ready on " + (document.getElementById("chainSelect").value === "mainnet" ? "Mainnet" : "Testnet"));
+        }
+
+        async function connectWallet() {
+            try {
+                const wcProvider = new WalletConnectProvider.default({
+                    rpc: { 16661: mainnetRpc, 16602: testnetRpc },
+                    chainId: document.getElementById("chainSelect").value === "mainnet" ? 16661 : 16602,
+                    qrcode: true
+                });
+
+                await wcProvider.enable(); // Triggers QR/modal for Trust Wallet
+
+                provider = new ethers.providers.Web3Provider(wcProvider);
+                signer = provider.getSigner();
+                connectedAddress = (await signer.getAddress()).toLowerCase();
+                contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+                updateStatus(`Connected: \( {connectedAddress.slice(0,6)}... \){connectedAddress.slice(-4)}`);
+                if (connectedAddress !== YOUR_WALLET) {
+                    alert("Connected wallet doesn't match paradigm.0g owner. Viewing mode only.");
+                }
+                await loadINFTs();
+            } catch (err) {
+                updateStatus("Connection failed: " + err.message, true);
+            }
+        }
+
+        async function loadINFTs() {
+            const container = document.getElementById("inftsContainer");
+            container.innerHTML = "<p>Loading your iNFTs...</p>";
+
+            let html = "";
+            for (const id of TOKEN_IDS) {
+                try {
+                    const owner = await contract.ownerOf(id);
+                    if (owner.toLowerCase() === YOUR_WALLET) {
+                        let uri = "Not available";
+                        try { uri = await contract.tokenURI(id); } catch(e) {}
+                        html += `
+                            <div class="inft-card">
+                                <h3 class="live">DARA Research Passport #${id} - LIVE & Verified</h3>
+                                <p>Owner: ${owner.slice(0,6)}... (paradigm.0g)</p>
+                                <p>Token URI: ${uri.startsWith("{") ? "Encrypted JSON (owner decrypt)" : uri || "Encrypted/Stored on 0G"}</p>
+                                <p class="warning">Metadata anchored on 0G Storage - Immutable & Quantum-secure research data.</p>
+                            </div>`;
+                    } else {
+                        html += `<div class="inft-card"><p>Token ${id}: Not owned by paradigm.0g wallet.</p></div>`;
+                    }
+                } catch (err) {
+                    html += `<div class="inft-card"><p>Token \( {id}: Query error ( \){err.message})</p></div>`;
+                }
+            }
+            container.innerHTML = html || "<p>No iNFTs found or contract query issue.</p>";
+        }
+
+        function updateStatus(msg, error=false) {
+            const el = document.getElementById("status");
+            el.innerText = msg;
+            el.style.color = error ? "#f00" : "#0f0";
+        }
+
+        document.getElementById("connectBtn").onclick = connectWallet;
+        document.getElementById("chainSelect").onchange = initProvider;
+
+        // Init on load
+        initProvider();
+        loadINFTs(); // Try public view first
+    </script>
+</body>
+</html>
